@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">WebRTCExample</string>
+    <string name="connect">Connect</string>
+    <string name="camera_rationale">camera_rationale</string>
+    <string name="switch_audio">Switch Audio</string>
+</resources>

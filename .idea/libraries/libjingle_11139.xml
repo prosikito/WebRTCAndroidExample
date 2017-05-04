@@ -1,0 +1,13 @@
+<component name="libraryTable">
+  <library name="libjingle-11139">
+    <CLASSES>
+      <root url="jar://$USER_HOME$/.android/build-cache/ad9407f0c75f57fca9ba38cbff074dc51df914d7/output/jars/libs/libjingle_peerconnection.jar!/" />
+      <root url="file://$USER_HOME$/.android/build-cache/ad9407f0c75f57fca9ba38cbff074dc51df914d7/output/res" />
+      <root url="jar://$USER_HOME$/.android/build-cache/ad9407f0c75f57fca9ba38cbff074dc51df914d7/output/jars/classes.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES>
+      <root url="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/io.pristine/libjingle/11139/a6f6cb4c981b134bdca2dc3acf470344949d8263/libjingle-11139-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>
