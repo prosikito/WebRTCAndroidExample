@@ -42,6 +42,12 @@ import io.socket.client.IO;
 import io.socket.client.Socket;
 import io.socket.emitter.Emitter;
 
+/*
+//
+// Created by cgrange on 04/05/2017
+//
+*/
+
 public class MainActivity extends AppCompatActivity {
 
     private static final String SIGNALING_URI       = "http://webrtc.theboton.io:7000";
