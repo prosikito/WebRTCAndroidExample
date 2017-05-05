@@ -1,4 +1,19 @@
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath 'me.tatarka:gradle-retrolambda:3.6.1'
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
 apply plugin: 'com.android.application'
+apply plugin: 'me.tatarka.retrolambda'
 
 android {
     compileSdkVersion 25
@@ -17,6 +32,10 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
+    compileOptions {
+        targetCompatibility 1.8
+        sourceCompatibility 1.8
+    }
 }
 
 dependencies {
@@ -28,8 +47,15 @@ dependencies {
     testCompile 'junit:junit:4.12'
 
     compile 'io.pristine:libjingle:11139@aar'
-    compile ('io.socket:socket.io-client:0.8.2') {
-        // excluding org.json which is provided by Android
-        exclude group: 'org.json', module: 'json'
-    }
+//    compile ('io.socket:socket.io-client:0.8.2') {
+//        // excluding org.json which is provided by Android
+//        exclude group: 'org.json', module: 'json'
+//    }
+
+    // Volley
+    compile 'com.android.volley:volley:1.0.0'
+
+    compile 'com.google.code.gson:gson:2.7'
+
+    compile 'com.squareup.okhttp3:okhttp:3.6.0'
 }
