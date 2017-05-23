@@ -33,7 +33,8 @@ public class ConnectionConstants {
 
     public static String getUrl(){
         if (BuildConfig.DEBUG)
-            return "https://portal-dev.gotrive.com";
+            return "http://2c2375c4.ngrok.io";
+//            return "https://portal-dev.gotrive.com";
         else
             return "https://gotrive.com";
     }

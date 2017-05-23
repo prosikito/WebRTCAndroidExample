@@ -18,8 +18,10 @@ import android.widget.Toast;
 import com.android.volley.VolleyError;
 import com.cgrange.webrtcexample.cloud.LiveVideoConfigurationGetConnection;
 import com.cgrange.webrtcexample.loggers.Logger;
+import com.cgrange.webrtcexample.model.AnswerCall;
 import com.cgrange.webrtcexample.model.LiveVideoConfigurationResponse;
 import com.cgrange.webrtcexample.model.LiveVideoIceServer;
+import com.google.gson.Gson;
 
 import org.webrtc.AudioSource;
 import org.webrtc.AudioTrack;
@@ -39,8 +41,11 @@ import org.webrtc.VideoRendererGui;
 import org.webrtc.VideoSource;
 import org.webrtc.VideoTrack;
 
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -58,22 +63,15 @@ import okio.ByteString;
 
 public class MainActivity extends AppCompatActivity {
 
-    private static final String SIGNALING_URI       = "wss://portal-dev.gotrive.com/cable";
-    private static final String SIGNALING_ECHO_URI  = "ws://echo.websocket.org";
+    private static final String SIGNALING_URI       = "wss://portal-dev.gotrive.com:443/live_video/cable";
+//    private static final String SIGNALING_ECHO_URI  = "wss://echo.websocket.org";
 //    private static final String SIGNALING_URI       = "http://webrtc.theboton.io:7000";
 
     private static final String VIDEO_TRACK_ID      = "video1";
     private static final String AUDIO_TRACK_ID      = "audio1";
     private static final String LOCAL_STREAM_ID     = "stream1";
 
-    private static final String SDP_MID             = "sdpMid";
-    private static final String SDP_M_LINE_INDEX    = "sdpMLineIndex";
-    private static final String SDP                 = "sdp";
-
-    private static final String CREATEOFFER         = "createoffer";
-    private static final String OFFER               = "offer";
-    private static final String ANSWER              = "answer";
-    private static final String CANDIDATE           = "candidate";
+    protected static final char[] KEYSTORE_PASSWORD = "gotrivesslcert".toCharArray();
 
     private Button connectButton;
     private Button switchAudioButton;
@@ -86,11 +84,15 @@ public class MainActivity extends AppCompatActivity {
     private boolean createOfferBool = false;
     private VideoSource localVideoSource;
 
-    private static final int MY_PERMISSIONS_REQUEST_CAMERA = 1005;
+    private static final int MY_PERMISSIONS_REQUEST = 1005;
     private AppRTCAudioManager audioManager;
     private LiveVideoConfigurationResponse liveVideoConfigurationResponse;
     private ArrayList<PeerConnection.IceServer> iceServers = new ArrayList<>();
     private OkHttpClient client;
+    private WebSocket ws;
+    private boolean connecting = false;
+//    private KeyStore trusted;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -101,8 +103,6 @@ public class MainActivity extends AppCompatActivity {
         else {
             initActivity();
         }
-
-        initSockets();
     }
 
     private void initActivity(){
@@ -176,23 +176,18 @@ public class MainActivity extends AppCompatActivity {
 
     private void checkCameraPermission(){
         // Here, thisActivity is the current activity
-        if (ContextCompat.checkSelfPermission(this,
-                Manifest.permission.CAMERA)
-                != PackageManager.PERMISSION_GRANTED) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED
+                || ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
 
             // Should we show an explanation?
-            if (ActivityCompat.shouldShowRequestPermissionRationale(this,
-                    Manifest.permission.CAMERA)) {
-                // Show an expanation to the user *asynchronously* -- don't block
-                // this thread waiting for the user's response! After the user
-                // sees the explanation, try again to request the permission.
+            if (ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.CAMERA)) {
                 runOnUiThread(() -> Toast.makeText(MainActivity.this, "Needs camera permission", Toast.LENGTH_SHORT).show());
-
+            } else if (ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.RECORD_AUDIO)){
+                runOnUiThread(() -> Toast.makeText(MainActivity.this, "Needs record audio permission", Toast.LENGTH_SHORT).show());
             } else {
-                // No explanation needed, we can request the permission.
                 ActivityCompat.requestPermissions(this,
-                        new String[]{Manifest.permission.CAMERA},
-                        MY_PERMISSIONS_REQUEST_CAMERA);
+                        new String[]{Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO},
+                        MY_PERMISSIONS_REQUEST);
             }
         }
         else {
@@ -202,28 +197,31 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-        if (requestCode == MY_PERMISSIONS_REQUEST_CAMERA) {
-            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                initActivity();
-            } else {
-                finish();
-            }
+        if (requestCode == MY_PERMISSIONS_REQUEST
+                && (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED
+                    || ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)) {
+
+                // TODO: SHOW PROBLEM WITH PERMISSIONS!
+
+        } else {
+            initActivity();
         }
     }
 
-    public void onConnect(View button) {
-//        ArrayList<PeerConnection.IceServer> iceServers = new ArrayList<>();
-//        iceServers.add(new PeerConnection.IceServer("stun:stun.l.google.com:19302"));
-
+    public void onConnect() {
+        connecting = true;
         peerConnection = peerConnectionFactory.createPeerConnection(
                 iceServers,
                 new MediaConstraints(),
                 peerConnectionObserver);
 
         peerConnection.addStream(localMediaStream);
+        peerConnection.createOffer(sdpObserver, new MediaConstraints());
+
 
 //        try {
-//            socket = IO.socket(SIGNALING_URI);
+//            socket = IO.socket(liveVideoConfigurationResponse.getSocketUrl());
+////            socket = IO.socket(SIGNALING_URI);
 //
 //            socket.on(CREATEOFFER, args -> {
 //                createOfferBool = true;
@@ -274,19 +272,11 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public void onCreateSuccess(SessionDescription sessionDescription) {
             peerConnection.setLocalDescription(sdpObserver, sessionDescription);
-//            try {
-//                JSONObject obj = new JSONObject();
-//                obj.put(SDP, sessionDescription.description);
-//                if (createOfferBool) {
-//                    socket.emit(OFFER, obj);
-//                    log("EMIT OFFER");
-//                } else {
-//                    socket.emit(ANSWER, obj);
-//                    log("EMIT ANSWER");
-//                }
-//            } catch (JSONException e) {
-//                log(e);
-//            }
+            String userId = "2";
+            String modelId = "2";
+
+            String sdp = sessionDescription.description.replace("\r", "\\\\r").replace("\n", "\\\\n").replace("OFFER", "offer");
+            sendMessage("{\"command\":\"message\", \"identifier\":\"{\\\"channel\\\":\\\"LiveVideo::SessionChannel\\\"}\", \"data\":\"{\\\"user\\\":\\\"" + userId + "\\\",\\\"model\\\":\\\"" + modelId + "\\\",\\\"description\\\":{\\\"type\\\":\\\"offer\\\",\\\"sdp\\\":\\\"" + sdp + "\\\"},\\\"action\\\":\\\"join\\\"}\"}");
         }
 
         @Override
@@ -328,16 +318,11 @@ public class MainActivity extends AppCompatActivity {
 
         @Override
         public void onIceCandidate(IceCandidate iceCandidate) {
-//            try {
-//                JSONObject obj = new JSONObject();
-//                obj.put(SDP_MID, iceCandidate.sdpMid);
-//                obj.put(SDP_M_LINE_INDEX, iceCandidate.sdpMLineIndex);
-//                obj.put(SDP, iceCandidate.sdp);
-//                socket.emit(CANDIDATE, obj);
-//                log("EMIT CANDIDATE");
-//            } catch (JSONException e) {
-//                log(e);
-//            }
+
+            String candidate = "{\\\"candidate\\\":\\\"" + iceCandidate.sdp + "\\\", \\\"sdpMid\\\":\\\""
+                    + iceCandidate.sdpMid + "\\\", \\\"sdpMLineIndex\\\":\\\"" + iceCandidate.sdpMLineIndex + "\\\"}";
+
+            sendMessage("{\"command\":\"message\", \"identifier\":\"{\\\"channel\\\":\\\"LiveVideo::SessionChannel\\\"}\", \"data\":\"{\\\"candidate\\\":" + candidate + ",\\\"session\\\":\\\"" + liveVideoConfigurationResponse.getSession().getId() + "\\\",\\\"action\\\":\\\"candidates\\\"}\"}");
         }
 
         @Override
@@ -431,13 +416,6 @@ public class MainActivity extends AppCompatActivity {
             log(e);
         }
 
-//        try {
-//            socket.close();
-//        }
-//        catch (Exception e){
-//            log(e);
-//        }
-
         if (audioManager != null) {
             audioManager.close();
         }
@@ -481,6 +459,8 @@ public class MainActivity extends AppCompatActivity {
                 String password = iceServer.getCredential() == null ? "" : iceServer.getCredential();
                 PeerConnection.IceServer peerConnectionIceServer = new PeerConnection.IceServer(iceServer.getUrl(), username, password);
                 iceServers.add(peerConnectionIceServer);
+
+                initSockets();
             }
         }
         catch (Exception e){
@@ -489,30 +469,64 @@ public class MainActivity extends AppCompatActivity {
     }
 
 
-    private void initSockets(){
-        client = new OkHttpClient();
+    private void initSockets() throws KeyStoreException, NoSuchAlgorithmException {
+        client = new OkHttpClient.Builder()
+                .retryOnConnectionFailure(false)
+                .readTimeout(0, TimeUnit.MILLISECONDS)
+                .writeTimeout(0, TimeUnit.MILLISECONDS)
+                .build();
 
-        Request request = new Request.Builder().url(SIGNALING_URI).build();
+
+        Request request = new Request.Builder().url(liveVideoConfigurationResponse.getSocketUrl()).build();
+//        Request request = new Request.Builder().url(SIGNALING_URI).build();
+
+
         EchoWebSocketListener listener = new EchoWebSocketListener();
-        WebSocket ws = client.newWebSocket(request, listener);
+        ws = client.newWebSocket(request, listener);
 
+        sendMessage("{\"command\":\"subscribe\",\"identifier\":\"{\\\"channel\\\":\\\"LiveVideo::SessionChannel\\\"}\"}");
+
+        // Trigger shutdown of the dispatcher's executor so this process can exit cleanly.
         client.dispatcher().executorService().shutdown();
     }
 
-    private final class EchoWebSocketListener extends WebSocketListener {
+    private void sendMessage(@NonNull String message){
+        Logger.log("Sending: " + message);
+        ws.send(message);
+    }
+
+
+
+
+
+    class EchoWebSocketListener extends WebSocketListener {
         private static final int NORMAL_CLOSURE_STATUS = 1000;
 
         @Override
         public void onOpen(WebSocket webSocket, Response response) {
-            webSocket.send("Hello, it's SSaurel !");
-            webSocket.send("What's up ?");
-            webSocket.send(ByteString.decodeHex("deadbeef"));
-            webSocket.close(NORMAL_CLOSURE_STATUS, "Goodbye !");
+            Logger.log("Socket opened successfully!");
         }
 
         @Override
         public void onMessage(WebSocket webSocket, String text) {
-            Logger.log("Receiving : " + text);
+            if (!text.contains("ping") && !text.contains("welcome"))
+                Logger.log("Receiving : " + text);
+
+            if (text.contains("confirm_subscription") && !connecting){
+                onConnect();
+            }
+
+            if (text.contains("take_session")){
+                Gson gson = new Gson();
+                AnswerCall answerCall = gson.fromJson(text, AnswerCall.class);
+
+                if (answerCall.getMessage().getSessionToken().equals(liveVideoConfigurationResponse.getSession().getToken())){
+//                    SessionDescription sdp = new SessionDescription(SessionDescription.Type.ANSWER, obj.getString(SDP));
+//                    peerConnection.setRemoteDescription(sdpObserver, sdp);
+                    Logger.log("RECEIVED THE SAME SESSION TOKEN!!! " + answerCall.getMessage().getSessionToken());
+
+                }
+            }
         }
 
         @Override

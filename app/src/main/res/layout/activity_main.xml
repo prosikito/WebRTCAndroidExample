@@ -18,8 +18,7 @@
         android:layout_alignParentTop="true"
         android:layout_alignParentStart="true"
         android:id="@+id/connect"
-        android:enabled="false"
-        android:onClick="onConnect" />
+        android:enabled="false"/>
 
     <Button
         android:text="@string/switch_audio"

@@ -41,7 +41,7 @@ public class Application extends android.app.Application {
 
     public RequestQueue getRequestQueue() {
         if (mRequestQueue == null) {
-            mRequestQueue = Volley.newRequestQueue(this, new HurlStack(null, newSslSocketFactory()));
+            mRequestQueue = Volley.newRequestQueue(this, new HurlStack(null, newSslSocketFactory(this)));
         }
         return mRequestQueue;
     }
@@ -57,13 +57,13 @@ public class Application extends android.app.Application {
         }
     }
 
-    private SSLSocketFactory newSslSocketFactory() {
+    public static SSLSocketFactory newSslSocketFactory(Context context) {
         try {
             // Get an instance of the Bouncy Castle KeyStore format
             KeyStore trusted = KeyStore.getInstance("BKS");
             // Get the raw resource, which contains the keystore with
             // your trusted certificates (root and any intermediate certs)
-            try (InputStream in = getResources().openRawResource(R.raw.gotrivesslcert)) {
+            try (InputStream in = context.getResources().openRawResource(R.raw.gotrivesslcert)) {
                 // Initialize the keystore with the provided trusted certificates
                 // Provide the password of the keystore
                 trusted.load(in, KEYSTORE_PASSWORD);

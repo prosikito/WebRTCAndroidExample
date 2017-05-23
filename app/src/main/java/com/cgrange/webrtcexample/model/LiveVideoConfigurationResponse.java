@@ -1,5 +1,6 @@
 package com.cgrange.webrtcexample.model;
 
+import com.cgrange.webrtcexample.cloud.ConnectionConstants;
 import com.google.gson.annotations.SerializedName;
 
 import java.io.Serializable;
@@ -28,6 +29,9 @@ public class LiveVideoConfigurationResponse implements Serializable {
 
     @SerializedName("signal")
     private String signal;
+
+    @SerializedName("wss_url")
+    private String socketUrl;
 
 
 
@@ -77,5 +81,14 @@ public class LiveVideoConfigurationResponse implements Serializable {
 
     public void setSignal(String signal) {
         this.signal = signal;
+    }
+
+    public String getSocketUrl() {
+        return "ws://2c2375c4.ngrok.io/live_video/cable";
+//        return socketUrl;
+    }
+
+    public void setSocketUrl(String socketUrl) {
+        this.socketUrl = socketUrl;
     }
 }
