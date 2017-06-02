@@ -137,7 +137,7 @@ public abstract class AbstractConnection<T> extends Request<T> {
         StringBuilder sb = new StringBuilder(ConnectionConstants.API_KEY_VALUE);
 
         try {
-            String userToken = "mTXdiCXi3_JAxhgiWq3hMA";
+            String userToken = "RPxu1-GrwAJoZUWfPcY4ww";
             if (!userToken.isEmpty())
                 sb.append(", ").append(ConnectionConstants.USER_TOKEN).append(userToken);
         }

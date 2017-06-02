@@ -5,6 +5,7 @@ import com.google.gson.annotations.SerializedName;
 
 /**
  * Created by cgrange on 23/05/17.
+ *
  */
 
 public class Message {
@@ -21,9 +22,6 @@ public class Message {
     @SerializedName("next_call")
     @Expose
     private String nextCall;
-    @SerializedName("sdp_answer")
-    @Expose
-    private String sdpAnswer;
     @SerializedName("session_token")
     @Expose
     private String sessionToken;
@@ -61,14 +59,6 @@ public class Message {
 
     public void setNextCall(String nextCall) {
         this.nextCall = nextCall;
-    }
-
-    public String getSdpAnswer() {
-        return sdpAnswer;
-    }
-
-    public void setSdpAnswer(String sdpAnswer) {
-        this.sdpAnswer = sdpAnswer;
     }
 
     public String getSessionToken() {

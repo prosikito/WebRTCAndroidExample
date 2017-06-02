@@ -1,10 +1,12 @@
 package com.cgrange.webrtcexample;
 
 import android.Manifest;
+import android.content.Context;
 import android.content.pm.PackageManager;
 import android.opengl.GLSurfaceView;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.PowerManager;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
@@ -23,6 +25,8 @@ import com.cgrange.webrtcexample.model.LiveVideoConfigurationResponse;
 import com.cgrange.webrtcexample.model.LiveVideoIceServer;
 import com.google.gson.Gson;
 
+import org.json.JSONException;
+import org.json.JSONObject;
 import org.webrtc.AudioSource;
 import org.webrtc.AudioTrack;
 import org.webrtc.CameraEnumerationAndroid;
@@ -63,15 +67,11 @@ import okio.ByteString;
 
 public class MainActivity extends AppCompatActivity {
 
-    private static final String SIGNALING_URI       = "wss://portal-dev.gotrive.com:443/live_video/cable";
-//    private static final String SIGNALING_ECHO_URI  = "wss://echo.websocket.org";
-//    private static final String SIGNALING_URI       = "http://webrtc.theboton.io:7000";
+    private static final String SIGNALING_URI       = "wss://c6cc2fd1.ngrok.io:443/live_video/cable";
 
     private static final String VIDEO_TRACK_ID      = "video1";
     private static final String AUDIO_TRACK_ID      = "audio1";
     private static final String LOCAL_STREAM_ID     = "stream1";
-
-    protected static final char[] KEYSTORE_PASSWORD = "gotrivesslcert".toCharArray();
 
     private Button connectButton;
     private Button switchAudioButton;
@@ -80,23 +80,22 @@ public class MainActivity extends AppCompatActivity {
     private PeerConnection peerConnection;
     private MediaStream localMediaStream;
     private VideoRenderer otherPeerRenderer;
-//    private Socket socket;
-    private boolean createOfferBool = false;
     private VideoSource localVideoSource;
 
     private static final int MY_PERMISSIONS_REQUEST = 1005;
     private AppRTCAudioManager audioManager;
     private LiveVideoConfigurationResponse liveVideoConfigurationResponse;
     private ArrayList<PeerConnection.IceServer> iceServers = new ArrayList<>();
-    private OkHttpClient client;
     private WebSocket ws;
     private boolean connecting = false;
-//    private KeyStore trusted;
+    private boolean connecting2 = false;
+    private PowerManager.WakeLock wakeLock;
 
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
         if (Build.VERSION.SDK_INT > Build.VERSION_CODES.LOLLIPOP) {
             checkCameraPermission();
         }
@@ -132,13 +131,9 @@ public class MainActivity extends AppCompatActivity {
         AudioTrack localAudioTrack = peerConnectionFactory.createAudioTrack(AUDIO_TRACK_ID, audioSource);
         localAudioTrack.setEnabled(true);
 
-        localMediaStream = peerConnectionFactory.createLocalMediaStream(LOCAL_STREAM_ID);
-        localMediaStream.addTrack(localVideoTrack);
-        localMediaStream.addTrack(localAudioTrack);
-
         GLSurfaceView videoView = (GLSurfaceView) findViewById(R.id.glview_call);
-
         VideoRendererGui.setView(videoView, null);
+
         try {
             otherPeerRenderer = VideoRendererGui.createGui(0, 0, 100, 100, RendererCommon.ScalingType.SCALE_ASPECT_FILL, true);
             VideoRenderer renderer = VideoRendererGui.createGui(50, 50, 50, 50, RendererCommon.ScalingType.SCALE_ASPECT_FILL, true);
@@ -148,6 +143,10 @@ public class MainActivity extends AppCompatActivity {
         }
 
         getLiveVideoConfiguration();
+
+        localMediaStream = peerConnectionFactory.createLocalMediaStream(LOCAL_STREAM_ID);
+        localMediaStream.addTrack(localVideoTrack);
+        localMediaStream.addTrack(localAudioTrack);
     }
 
     private void initAudioManager(){
@@ -201,7 +200,8 @@ public class MainActivity extends AppCompatActivity {
                 && (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED
                     || ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)) {
 
-                // TODO: SHOW PROBLEM WITH PERMISSIONS!
+            // EMPTY BLOCK
+            Toast.makeText(this, "Needs permission", Toast.LENGTH_SHORT).show();
 
         } else {
             initActivity();
@@ -209,7 +209,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public void onConnect() {
-        connecting = true;
         peerConnection = peerConnectionFactory.createPeerConnection(
                 iceServers,
                 new MediaConstraints(),
@@ -217,66 +216,17 @@ public class MainActivity extends AppCompatActivity {
 
         peerConnection.addStream(localMediaStream);
         peerConnection.createOffer(sdpObserver, new MediaConstraints());
-
-
-//        try {
-//            socket = IO.socket(liveVideoConfigurationResponse.getSocketUrl());
-////            socket = IO.socket(SIGNALING_URI);
-//
-//            socket.on(CREATEOFFER, args -> {
-//                createOfferBool = true;
-//                peerConnection.createOffer(sdpObserver, new MediaConstraints());
-//                log("CREATE OFFER");
-//            }).on(OFFER, args -> {
-//                try {
-//                    JSONObject obj = (JSONObject) args[0];
-//                    SessionDescription sdp = new SessionDescription(SessionDescription.Type.OFFER,
-//                            obj.getString(SDP));
-//                    peerConnection.setRemoteDescription(sdpObserver, sdp);
-//                    peerConnection.createAnswer(sdpObserver, new MediaConstraints());
-//                    log("OFFER");
-//                } catch (JSONException e) {
-//                    log(e);
-//                }
-//            }).on(ANSWER, args -> {
-//                try {
-//                    JSONObject obj = (JSONObject) args[0];
-//                    SessionDescription sdp = new SessionDescription(SessionDescription.Type.ANSWER,
-//                            obj.getString(SDP));
-//                    peerConnection.setRemoteDescription(sdpObserver, sdp);
-//                    log("ANSWER");
-//                } catch (JSONException e) {
-//                    log(e);
-//                }
-//            }).on(CANDIDATE, args -> {
-//                try {
-//                    JSONObject obj = (JSONObject) args[0];
-//                    peerConnection.addIceCandidate(new IceCandidate(obj.getString(SDP_MID),
-//                            obj.getInt(SDP_M_LINE_INDEX),
-//                            obj.getString(SDP)));
-//                    log("CANDIDATE");
-//
-//                } catch (JSONException e) {
-//                    log(e);
-//                }
-//            });
-//            socket.connect();
-//            runOnUiThread(() -> log("CONNECT"));
-//
-//        } catch (URISyntaxException e) {
-//            log(e);
-//        }
     }
 
     SdpObserver sdpObserver = new SdpObserver() {
         @Override
         public void onCreateSuccess(SessionDescription sessionDescription) {
             peerConnection.setLocalDescription(sdpObserver, sessionDescription);
-            String userId = "2";
-            String modelId = "2";
-
+            int sessionId = liveVideoConfigurationResponse.getSession().getId();
             String sdp = sessionDescription.description.replace("\r", "\\\\r").replace("\n", "\\\\n").replace("OFFER", "offer");
-            sendMessage("{\"command\":\"message\", \"identifier\":\"{\\\"channel\\\":\\\"LiveVideo::SessionChannel\\\"}\", \"data\":\"{\\\"user\\\":\\\"" + userId + "\\\",\\\"model\\\":\\\"" + modelId + "\\\",\\\"description\\\":{\\\"type\\\":\\\"offer\\\",\\\"sdp\\\":\\\"" + sdp + "\\\"},\\\"action\\\":\\\"join\\\"}\"}");
+            if (!connecting2)
+                sendMessage("{\"command\":\"message\", \"identifier\":\"{\\\"channel\\\":\\\"LiveVideo::SessionChannel\\\"}\", \"data\":\"{\\\"session\\\":\\\"" + sessionId + "\\\",\\\"target\\\":\\\"" + "admin" + "\\\",\\\"description\\\":{\\\"type\\\":\\\"offer\\\",\\\"sdp\\\":\\\"" + sdp + "\\\"},\\\"action\\\":\\\"answer\\\"}\"}");
+            connecting2 = true;
         }
 
         @Override
@@ -322,19 +272,25 @@ public class MainActivity extends AppCompatActivity {
             String candidate = "{\\\"candidate\\\":\\\"" + iceCandidate.sdp + "\\\", \\\"sdpMid\\\":\\\""
                     + iceCandidate.sdpMid + "\\\", \\\"sdpMLineIndex\\\":\\\"" + iceCandidate.sdpMLineIndex + "\\\"}";
 
-            sendMessage("{\"command\":\"message\", \"identifier\":\"{\\\"channel\\\":\\\"LiveVideo::SessionChannel\\\"}\", \"data\":\"{\\\"candidate\\\":" + candidate + ",\\\"session\\\":\\\"" + liveVideoConfigurationResponse.getSession().getId() + "\\\",\\\"action\\\":\\\"candidates\\\"}\"}");
+            sendMessage("{\"command\":\"message\", \"identifier\":\"{\\\"channel\\\":\\\"LiveVideo::SessionChannel\\\"}\", \"data\":\"{\\\"target\\\":" + "\\\"admin\\\"" + ",\\\"candidate\\\":" + candidate + ",\\\"session\\\":\\\"" + liveVideoConfigurationResponse.getSession().getId() + "\\\",\\\"action\\\":\\\"candidates\\\"}\"}");
         }
 
         @Override
         public void onAddStream(MediaStream mediaStream) {
-            mediaStream.videoTracks.getFirst().addRenderer(otherPeerRenderer);
             log("ADD REMOTE STREAM");
+            peerConnection.addStream(mediaStream);
+            try {
+                mediaStream.videoTracks.getFirst().addRenderer(otherPeerRenderer);
+            }
+            catch (Exception e){
+                Logger.log(e);
+            }
         }
 
         @Override
         public void onRemoveStream(MediaStream mediaStream) {
-            mediaStream.videoTracks.getFirst().removeRenderer(otherPeerRenderer);
             log("REMOVE STREAM");
+            peerConnection.removeStream(mediaStream);
         }
 
         @Override
@@ -361,18 +317,24 @@ public class MainActivity extends AppCompatActivity {
     private void hangup(){
 
         try {
-            if (peerConnection != null && localMediaStream != null)
-                peerConnection.removeStream(localMediaStream);
+            peerConnection.removeStream(localMediaStream);
         }
         catch (Exception e){
             log(e);
+        }
+        try {
+            if (audioManager != null) {
+                audioManager.close();
+            }
+        }
+        catch (Exception e){
+            Logger.log(e);
         }
 
         try {
             if (localVideoSource != null) {
                 localVideoSource.stop();
             }
-
         }
         catch (Exception e){
             log(e);
@@ -415,16 +377,22 @@ public class MainActivity extends AppCompatActivity {
         catch (Exception e){
             log(e);
         }
+    }
 
-        if (audioManager != null) {
-            audioManager.close();
-        }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        hangup();
+        wakeLock.release();
     }
 
     @Override
-    protected void onDestroy() {
-        hangup();
-        super.onDestroy();
+    protected void onResume() {
+        super.onResume();
+        PowerManager powerManager = (PowerManager)getSystemService(Context.POWER_SERVICE);
+        wakeLock = powerManager.newWakeLock(PowerManager.FULL_WAKE_LOCK, "My Lock");
+        wakeLock.acquire();
     }
 
     void getLiveVideoConfiguration() {
@@ -470,15 +438,15 @@ public class MainActivity extends AppCompatActivity {
 
 
     private void initSockets() throws KeyStoreException, NoSuchAlgorithmException {
-        client = new OkHttpClient.Builder()
+        OkHttpClient client = new OkHttpClient.Builder()
                 .retryOnConnectionFailure(false)
                 .readTimeout(0, TimeUnit.MILLISECONDS)
                 .writeTimeout(0, TimeUnit.MILLISECONDS)
                 .build();
 
 
-        Request request = new Request.Builder().url(liveVideoConfigurationResponse.getSocketUrl()).build();
-//        Request request = new Request.Builder().url(SIGNALING_URI).build();
+//        Request request = new Request.Builder().url(liveVideoConfigurationResponse.getSocketUrl()).build();
+        Request request = new Request.Builder().url(SIGNALING_URI).build();
 
 
         EchoWebSocketListener listener = new EchoWebSocketListener();
@@ -491,7 +459,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void sendMessage(@NonNull String message){
-        Logger.log("Sending: " + message);
         ws.send(message);
     }
 
@@ -509,22 +476,70 @@ public class MainActivity extends AppCompatActivity {
 
         @Override
         public void onMessage(WebSocket webSocket, String text) {
-            if (!text.contains("ping") && !text.contains("welcome"))
+            if (!text.contains("ping") && !text.contains("welcome") && !text.contains("candidates"))
                 Logger.log("Receiving : " + text);
 
+            // CUANDO ENVIO SUSCRIBE
             if (text.contains("confirm_subscription") && !connecting){
-                onConnect();
+                String userId = "18";
+                String modelId = "2";
+                sendMessage("{\"command\":\"message\", \"identifier\":\"{\\\"channel\\\":\\\"LiveVideo::SessionChannel\\\"}\", \"data\":\"{\\\"user\\\":\\\"" + userId + "\\\",\\\"model\\\":\\\"" + modelId + "\\\",\\\"action\\\":\\\"join\\\"}\"}");
+                connecting = true;
             }
 
-            if (text.contains("take_session")){
+            // CUANDO ME COGEN LA LLAMADA
+            if (text.contains("take_session")) {
                 Gson gson = new Gson();
                 AnswerCall answerCall = gson.fromJson(text, AnswerCall.class);
 
                 if (answerCall.getMessage().getSessionToken().equals(liveVideoConfigurationResponse.getSession().getToken())){
-//                    SessionDescription sdp = new SessionDescription(SessionDescription.Type.ANSWER, obj.getString(SDP));
-//                    peerConnection.setRemoteDescription(sdpObserver, sdp);
                     Logger.log("RECEIVED THE SAME SESSION TOKEN!!! " + answerCall.getMessage().getSessionToken());
+                    onConnect();
+                }
+            }
 
+            // CUANDO EL ADMIN SETEA MI SDP Y ME ENVIA EL SUYO
+            if (text.contains("answer")){
+                try {
+                    JSONObject jsonObject = new JSONObject(text);
+
+                    JSONObject message = jsonObject.getJSONObject("message");
+                    String type = message.getString("target");
+                    if ("client".equals(type)) {
+                        String sessionId = message.getString("session");
+                        JSONObject description = message.getJSONObject("description");
+                        String remoteSdp = description.getString("sdp");
+
+                        if (sessionId.equals(String.valueOf(liveVideoConfigurationResponse.getSession().getId()))) {
+                            SessionDescription sdp = new SessionDescription(SessionDescription.Type.ANSWER, remoteSdp);
+                            peerConnection.setRemoteDescription(sdpObserver, sdp);
+                        }
+                    }
+                } catch (JSONException e) {
+                    Logger.log(e);
+                }
+            }
+
+
+            // UNA VEZ ESTABLECIDA LA CONEXION WEBRTC, RECIBIR CANDIDATOS
+            if (text.contains("candidates")){
+                try {
+                    JSONObject candidates = new JSONObject(text);
+
+                    JSONObject data = candidates.getJSONObject("message");
+                    String target = data.getString("target");
+                    String session = data.getString("candidate_session");
+                    if ("client".equals(target) && session.equals(String.valueOf(liveVideoConfigurationResponse.getSession().getId()))){
+                        JSONObject candidateTarget = data.getJSONObject("candidate_target");
+                        String sdp = candidateTarget.getString("candidate");
+                        String sdpMid = candidateTarget.getString("sdpMid");
+                        String sdpMLineIndex = String.valueOf(candidateTarget.getInt("sdpMLineIndex"));
+
+                        peerConnection.addIceCandidate(new IceCandidate(sdpMid, Integer.valueOf(sdpMLineIndex), sdp));
+                    }
+                } catch (JSONException e) {
+                    Logger.log(text);
+                    Logger.log(e);
                 }
             }
         }
@@ -544,5 +559,11 @@ public class MainActivity extends AppCompatActivity {
         public void onFailure(WebSocket webSocket, Throwable t, Response response) {
             Logger.log("Error : " + t.getMessage());
         }
+    }
+
+    @Override
+    public void onBackPressed() {
+        super.onBackPressed();
+        hangup();
     }
 }
