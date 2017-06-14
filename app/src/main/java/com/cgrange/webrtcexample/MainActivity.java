@@ -23,13 +23,13 @@ import com.cgrange.webrtcexample.loggers.Logger;
 import com.cgrange.webrtcexample.model.AnswerCall;
 import com.cgrange.webrtcexample.model.LiveVideoConfigurationResponse;
 import com.cgrange.webrtcexample.model.LiveVideoIceServer;
+import com.cgrange.webrtcexample.util.TokenGeneratorHs256;
 import com.google.gson.Gson;
 
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.webrtc.AudioSource;
 import org.webrtc.AudioTrack;
-import org.webrtc.CameraEnumerationAndroid;
 import org.webrtc.DataChannel;
 import org.webrtc.IceCandidate;
 import org.webrtc.MediaConstraints;
@@ -39,17 +39,16 @@ import org.webrtc.PeerConnectionFactory;
 import org.webrtc.RendererCommon;
 import org.webrtc.SdpObserver;
 import org.webrtc.SessionDescription;
-import org.webrtc.VideoCapturerAndroid;
 import org.webrtc.VideoRenderer;
 import org.webrtc.VideoRendererGui;
-import org.webrtc.VideoSource;
-import org.webrtc.VideoTrack;
 
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -57,6 +56,8 @@ import okhttp3.Response;
 import okhttp3.WebSocket;
 import okhttp3.WebSocketListener;
 import okio.ByteString;
+
+import static com.cgrange.webrtcexample.MainActivity.EchoWebSocketListener.NORMAL_CLOSURE_STATUS;
 
 
 /*
@@ -67,9 +68,8 @@ import okio.ByteString;
 
 public class MainActivity extends AppCompatActivity {
 
-    private static final String SIGNALING_URI       = "wss://c6cc2fd1.ngrok.io:443/live_video/cable";
+    private static final String SIGNALING_URI       = "wss://sandbox.gotrive.com:443/live_video/cable";
 
-    private static final String VIDEO_TRACK_ID      = "video1";
     private static final String AUDIO_TRACK_ID      = "audio1";
     private static final String LOCAL_STREAM_ID     = "stream1";
 
@@ -80,7 +80,6 @@ public class MainActivity extends AppCompatActivity {
     private PeerConnection peerConnection;
     private MediaStream localMediaStream;
     private VideoRenderer otherPeerRenderer;
-    private VideoSource localVideoSource;
 
     private static final int MY_PERMISSIONS_REQUEST = 1005;
     private AppRTCAudioManager audioManager;
@@ -89,19 +88,27 @@ public class MainActivity extends AppCompatActivity {
     private WebSocket ws;
     private boolean connecting = false;
     private boolean connecting2 = false;
+    private boolean connecting3 = false;
     private PowerManager.WakeLock wakeLock;
-
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
         if (Build.VERSION.SDK_INT > Build.VERSION_CODES.LOLLIPOP) {
-            checkCameraPermission();
+            checkMicroPermission();
         }
         else {
             initActivity();
         }
+
+        String appSecret = "6KJYnaglXJ/o:PXgBbkXL8rDG1j7CvPwNzXsV+RPSceIqPbyAjxfk+s8=";
+        int appId = 902966358;
+        String userId = "2";
+
+        TokenGeneratorHs256 token = new TokenGeneratorHs256(appSecret.toCharArray(), appId, userId);
+        String jwt = token.generateToken(true);
+        log(jwt);
     }
 
     private void initActivity(){
@@ -116,16 +123,10 @@ public class MainActivity extends AppCompatActivity {
                 this,  // Context
                 true,  // Audio Enabled
                 true,  // Video Enabled
-                true  // Hardware Acceleration Enabled
+                true   // Hardware Acceleration Enabled
                 );
 
         peerConnectionFactory = new PeerConnectionFactory();
-
-        VideoCapturerAndroid videoCapturerAndroid = VideoCapturerAndroid.create(CameraEnumerationAndroid.getNameOfFrontFacingDevice(), null);
-
-        localVideoSource = peerConnectionFactory.createVideoSource(videoCapturerAndroid, new MediaConstraints());
-        VideoTrack localVideoTrack = peerConnectionFactory.createVideoTrack(VIDEO_TRACK_ID, localVideoSource);
-        localVideoTrack.setEnabled(true);
 
         AudioSource audioSource = peerConnectionFactory.createAudioSource(new MediaConstraints());
         AudioTrack localAudioTrack = peerConnectionFactory.createAudioTrack(AUDIO_TRACK_ID, audioSource);
@@ -136,8 +137,6 @@ public class MainActivity extends AppCompatActivity {
 
         try {
             otherPeerRenderer = VideoRendererGui.createGui(0, 0, 100, 100, RendererCommon.ScalingType.SCALE_ASPECT_FILL, true);
-            VideoRenderer renderer = VideoRendererGui.createGui(50, 50, 50, 50, RendererCommon.ScalingType.SCALE_ASPECT_FILL, true);
-            localVideoTrack.addRenderer(renderer);
         } catch (Exception e) {
             log(e);
         }
@@ -145,7 +144,6 @@ public class MainActivity extends AppCompatActivity {
         getLiveVideoConfiguration();
 
         localMediaStream = peerConnectionFactory.createLocalMediaStream(LOCAL_STREAM_ID);
-        localMediaStream.addTrack(localVideoTrack);
         localMediaStream.addTrack(localAudioTrack);
     }
 
@@ -173,19 +171,16 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void checkCameraPermission(){
+    private void checkMicroPermission(){
         // Here, thisActivity is the current activity
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED
-                || ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
 
             // Should we show an explanation?
-            if (ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.CAMERA)) {
-                runOnUiThread(() -> Toast.makeText(MainActivity.this, "Needs camera permission", Toast.LENGTH_SHORT).show());
-            } else if (ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.RECORD_AUDIO)){
+            if (ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.RECORD_AUDIO)){
                 runOnUiThread(() -> Toast.makeText(MainActivity.this, "Needs record audio permission", Toast.LENGTH_SHORT).show());
             } else {
                 ActivityCompat.requestPermissions(this,
-                        new String[]{Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO},
+                        new String[]{Manifest.permission.RECORD_AUDIO},
                         MY_PERMISSIONS_REQUEST);
             }
         }
@@ -197,8 +192,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         if (requestCode == MY_PERMISSIONS_REQUEST
-                && (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED
-                    || ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)) {
+                && ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
 
             // EMPTY BLOCK
             Toast.makeText(this, "Needs permission", Toast.LENGTH_SHORT).show();
@@ -209,21 +203,53 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public void onConnect() {
-        peerConnection = peerConnectionFactory.createPeerConnection(
-                iceServers,
-                new MediaConstraints(),
-                peerConnectionObserver);
+
+//        iceServers = new ArrayList<>();
+//        iceServers.add(new PeerConnection.IceServer("stun:numb.viagenie.ca"));
+//        iceServers.add(new PeerConnection.IceServer("turn:numb.viagenie.ca", "developer@gotrive.com", "g0tr1v3"));
+
+//        for (PeerConnection.IceServer iceServer : iceServers){
+//            String password = iceServer.password == null ? "" : iceServer.password;
+//            String username = iceServer.username == null ? "" : iceServer.username;
+//            log(iceServer.uri + " " + username + " " + password);
+//        }
+
+        PeerConnection.RTCConfiguration rtcConfig =
+                new PeerConnection.RTCConfiguration(iceServers);
+
+        // TCP candidates are only useful when connecting to a server that supports
+        // ICE-TCP.
+        rtcConfig.tcpCandidatePolicy = PeerConnection.TcpCandidatePolicy.ENABLED;
+        rtcConfig.iceTransportsType = PeerConnection.IceTransportsType.ALL;
+        rtcConfig.bundlePolicy = PeerConnection.BundlePolicy.MAXCOMPAT;
+        rtcConfig.rtcpMuxPolicy = PeerConnection.RtcpMuxPolicy.NEGOTIATE;
+        rtcConfig.continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY;
+        // Use ECDSA encryption.
+        rtcConfig.keyType = PeerConnection.KeyType.ECDSA;
+
+//        peerConnection = peerConnectionFactory.createPeerConnection(iceServers, new MediaConstraints(), peerConnectionObserver);
+        peerConnection = peerConnectionFactory.createPeerConnection(rtcConfig, new MediaConstraints(), peerConnectionObserver);
 
         peerConnection.addStream(localMediaStream);
-        peerConnection.createOffer(sdpObserver, new MediaConstraints());
+
+        MediaConstraints mediaConstraints = new MediaConstraints();
+        mediaConstraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"));
+        mediaConstraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveVideo", "true"));
+        peerConnection.createOffer(sdpObserver, mediaConstraints);
     }
 
     SdpObserver sdpObserver = new SdpObserver() {
         @Override
         public void onCreateSuccess(SessionDescription sessionDescription) {
-            peerConnection.setLocalDescription(sdpObserver, sessionDescription);
+            // REMOVE RED AND RTX
+            SessionDescription sessionDescriptionModified =
+                    new SessionDescription(sessionDescription.type, removeREDandRTXfromSDP(sessionDescription.description));
+
+            peerConnection.setLocalDescription(sdpObserver, sessionDescriptionModified);
             int sessionId = liveVideoConfigurationResponse.getSession().getId();
-            String sdp = sessionDescription.description.replace("\r", "\\\\r").replace("\n", "\\\\n").replace("OFFER", "offer");
+
+            String sdp = sessionDescriptionModified.description.replace("\r", "\\\\r").replace("\n", "\\\\n").replace("OFFER", "offer");
+
             if (!connecting2)
                 sendMessage("{\"command\":\"message\", \"identifier\":\"{\\\"channel\\\":\\\"LiveVideo::SessionChannel\\\"}\", \"data\":\"{\\\"session\\\":\\\"" + sessionId + "\\\",\\\"target\\\":\\\"" + "admin" + "\\\",\\\"description\\\":{\\\"type\\\":\\\"offer\\\",\\\"sdp\\\":\\\"" + sdp + "\\\"},\\\"action\\\":\\\"answer\\\"}\"}");
             connecting2 = true;
@@ -263,12 +289,11 @@ public class MainActivity extends AppCompatActivity {
 
         @Override
         public void onIceGatheringChange(PeerConnection.IceGatheringState iceGatheringState) {
-            log("ON ICE GATHERING CHANGE");
+            log("ON ICE GATHERING CHANGE " + iceGatheringState.toString());
         }
 
         @Override
         public void onIceCandidate(IceCandidate iceCandidate) {
-
             String candidate = "{\\\"candidate\\\":\\\"" + iceCandidate.sdp + "\\\", \\\"sdpMid\\\":\\\""
                     + iceCandidate.sdpMid + "\\\", \\\"sdpMLineIndex\\\":\\\"" + iceCandidate.sdpMLineIndex + "\\\"}";
 
@@ -278,19 +303,12 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public void onAddStream(MediaStream mediaStream) {
             log("ADD REMOTE STREAM");
-            peerConnection.addStream(mediaStream);
-            try {
-                mediaStream.videoTracks.getFirst().addRenderer(otherPeerRenderer);
-            }
-            catch (Exception e){
-                Logger.log(e);
-            }
+            mediaStream.videoTracks.getFirst().addRenderer(otherPeerRenderer);
         }
 
         @Override
         public void onRemoveStream(MediaStream mediaStream) {
             log("REMOVE STREAM");
-            peerConnection.removeStream(mediaStream);
         }
 
         @Override
@@ -306,22 +324,16 @@ public class MainActivity extends AppCompatActivity {
 
     private void log(Exception e){
         if (e != null && e.getMessage() != null)
-            Log.e("WEBRTC ERROR", e.getMessage());
+            Log.e("PRUEBACAS ERROR", e.getMessage());
     }
 
     private void log(String message){
         if (message != null)
-            Log.e("WEBRTC", message);
+            Log.e("PRUEBACAS", message);
     }
 
     private void hangup(){
 
-        try {
-            peerConnection.removeStream(localMediaStream);
-        }
-        catch (Exception e){
-            log(e);
-        }
         try {
             if (audioManager != null) {
                 audioManager.close();
@@ -332,8 +344,9 @@ public class MainActivity extends AppCompatActivity {
         }
 
         try {
-            if (localVideoSource != null) {
-                localVideoSource.stop();
+            if (peerConnection != null && localMediaStream != null) {
+                peerConnection.removeStream(localMediaStream);
+                peerConnection.close();
             }
         }
         catch (Exception e){
@@ -341,41 +354,12 @@ public class MainActivity extends AppCompatActivity {
         }
 
         try {
-            if (peerConnectionFactory != null) {
-                peerConnectionFactory.stopAecDump();
-            }
+            if (ws != null)
+                ws.close(NORMAL_CLOSURE_STATUS, "exit");
+            ws = null;
         }
         catch (Exception e){
-            log(e);
-        }
-
-        try {
-            if (peerConnection != null) {
-                peerConnection.dispose();
-                peerConnection = null;
-            }
-        }
-        catch (Exception e){
-            log(e);
-        }
-
-
-        try {
-            if (peerConnectionFactory != null) {
-                peerConnectionFactory.dispose();
-                peerConnectionFactory = null;
-            }
-        }
-        catch (Exception e){
-            log(e);
-        }
-
-        try {
-            PeerConnectionFactory.stopInternalTracingCapture();
-            PeerConnectionFactory.shutdownInternalTracer();
-        }
-        catch (Exception e){
-            log(e);
+            Logger.log(e);
         }
     }
 
@@ -427,9 +411,8 @@ public class MainActivity extends AppCompatActivity {
                 String password = iceServer.getCredential() == null ? "" : iceServer.getCredential();
                 PeerConnection.IceServer peerConnectionIceServer = new PeerConnection.IceServer(iceServer.getUrl(), username, password);
                 iceServers.add(peerConnectionIceServer);
-
-                initSockets();
             }
+            initSockets();
         }
         catch (Exception e){
             Logger.log(e);
@@ -467,7 +450,7 @@ public class MainActivity extends AppCompatActivity {
 
 
     class EchoWebSocketListener extends WebSocketListener {
-        private static final int NORMAL_CLOSURE_STATUS = 1000;
+        public static final int NORMAL_CLOSURE_STATUS = 1000;
 
         @Override
         public void onOpen(WebSocket webSocket, Response response) {
@@ -476,12 +459,12 @@ public class MainActivity extends AppCompatActivity {
 
         @Override
         public void onMessage(WebSocket webSocket, String text) {
-            if (!text.contains("ping") && !text.contains("welcome") && !text.contains("candidates"))
+            if (!text.contains("ping") && !text.contains("welcome"))
                 Logger.log("Receiving : " + text);
 
             // CUANDO ENVIO SUSCRIBE
             if (text.contains("confirm_subscription") && !connecting){
-                String userId = "18";
+                String userId = "1";
                 String modelId = "2";
                 sendMessage("{\"command\":\"message\", \"identifier\":\"{\\\"channel\\\":\\\"LiveVideo::SessionChannel\\\"}\", \"data\":\"{\\\"user\\\":\\\"" + userId + "\\\",\\\"model\\\":\\\"" + modelId + "\\\",\\\"action\\\":\\\"join\\\"}\"}");
                 connecting = true;
@@ -492,14 +475,15 @@ public class MainActivity extends AppCompatActivity {
                 Gson gson = new Gson();
                 AnswerCall answerCall = gson.fromJson(text, AnswerCall.class);
 
-                if (answerCall.getMessage().getSessionToken().equals(liveVideoConfigurationResponse.getSession().getToken())){
+                if (!connecting2 &&
+                    answerCall.getMessage().getSessionToken().equals(liveVideoConfigurationResponse.getSession().getToken())){
                     Logger.log("RECEIVED THE SAME SESSION TOKEN!!! " + answerCall.getMessage().getSessionToken());
                     onConnect();
                 }
             }
 
             // CUANDO EL ADMIN SETEA MI SDP Y ME ENVIA EL SUYO
-            if (text.contains("answer")){
+            if (text.contains("answer") && !connecting3){
                 try {
                     JSONObject jsonObject = new JSONObject(text);
 
@@ -510,9 +494,15 @@ public class MainActivity extends AppCompatActivity {
                         JSONObject description = message.getJSONObject("description");
                         String remoteSdp = description.getString("sdp");
 
+                        log("SDP QUE RECIBO, ANTES DE PARSEAR: " + remoteSdp);
+                        // remove red and rtx
+                        remoteSdp = removeREDandRTXfromSDP(remoteSdp);
+                        log("SDP QUE RECIBO, DESPUES DE PARSEAR: " + remoteSdp);
+
                         if (sessionId.equals(String.valueOf(liveVideoConfigurationResponse.getSession().getId()))) {
                             SessionDescription sdp = new SessionDescription(SessionDescription.Type.ANSWER, remoteSdp);
                             peerConnection.setRemoteDescription(sdpObserver, sdp);
+                            connecting3 = true;
                         }
                     }
                 } catch (JSONException e) {
@@ -565,5 +555,48 @@ public class MainActivity extends AppCompatActivity {
     public void onBackPressed() {
         super.onBackPressed();
         hangup();
+    }
+
+    private String removeREDandRTXfromSDP(String sdp){
+
+        String[] linesBefore = sdp.split("\r\n");
+
+        ArrayList<String> linesAfter = new ArrayList<>();
+        ArrayList<String> numbers = new ArrayList<>();
+
+        for (String line : linesBefore){
+            if (!line.contains(" red/") && !line.contains(" rtx/") && !line.contains("a=fmtp:96"))
+                linesAfter.add(line);
+
+            // SI LOS CONTIENEN RED O RTX GUARDAMOS EL NÚMERO PARA ELIMINARLO DE
+            // LA LINEA DE VIDEO DEL SDP
+            if (line.contains(" red/") || line.contains(" rtx/")){
+                // LA LÍNEA CONTIENE VARIOS NÚMEROS, PERO SOLO NOS INTERESA EL QUE VIENE DESPUES DE LOS :
+                Pattern p = Pattern.compile(":\\d+");
+                Matcher m = p.matcher(line);
+                while (m.find()) {
+                    numbers.add(m.group().replace(":", ""));
+                }
+            }
+        }
+
+        // BUSCAMOS LA LINEA DE VIDEO m=video Y ELIMINAMOS LOS NÚMEROS RELACIONADOS CON RTX Y RED
+
+        for(int i = 0; i < linesAfter.size(); i++){
+            if (linesAfter.get(i).contains("m=video")){
+                for (String number : numbers) {
+                    linesAfter.set(i, linesAfter.get(i).replace(" " + number, ""));
+                }
+            }
+        }
+
+
+        // CONCATENAMOS TODAS LAS LÍNEAS
+        StringBuilder stringBuilder = new StringBuilder();
+        for (String line : linesAfter){
+            stringBuilder.append(line).append("\r\n");
+        }
+
+        return stringBuilder.toString();
     }
 }

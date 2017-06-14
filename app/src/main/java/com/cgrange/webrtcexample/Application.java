@@ -20,7 +20,7 @@ import javax.net.ssl.TrustManagerFactory;
  *
  */
 @SuppressWarnings("unused")
-public class Application extends android.app.Application {
+public class Application extends android.app.Application{
 
     private RequestQueue mRequestQueue;
     Application mInstance;
